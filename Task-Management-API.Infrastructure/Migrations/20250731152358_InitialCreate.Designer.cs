@@ -12,7 +12,7 @@ using Task_Management_API.Infrastructure.Data;
 namespace Task_Management_API.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250605104030_InitialCreate")]
+    [Migration("20250731152358_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -199,6 +199,9 @@ namespace Task_Management_API.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("ApplicationUserId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -218,6 +221,8 @@ namespace Task_Management_API.Infrastructure.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApplicationUserId");
 
                     b.HasIndex("UserId");
 
@@ -246,6 +251,9 @@ namespace Task_Management_API.Infrastructure.Migrations
 
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("bit");
+
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
@@ -360,9 +368,14 @@ namespace Task_Management_API.Infrastructure.Migrations
 
             modelBuilder.Entity("Task_Management_API.Domain.Models.AppTask", b =>
                 {
-                    b.HasOne("Task_Management_API.Domain.Models.ApplicationUser", "User")
+                    b.HasOne("Task_Management_API.Domain.Models.ApplicationUser", null)
                         .WithMany("Tasks")
-                        .HasForeignKey("UserId");
+                        .HasForeignKey("ApplicationUserId");
+
+                    b.HasOne("Task_Management_API.Domain.Models.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("User");
                 });

@@ -6,7 +6,6 @@ using Task_Management_Api.Application.Interfaces;
 using Task_Management_API.Domain.Constants;
 using Task_Management_Api.Application.Pagination;
 using Task_Management_API.Domain.Models;
-
 using System.Text.Json;
 
 namespace Task_Management_API.Controllers
@@ -16,43 +15,88 @@ namespace Task_Management_API.Controllers
     [Authorize] 
     public class UserController : ControllerBase
     {
-        private readonly IUserRepository _UserRepo; 
+        private readonly IUserRepository _userRepo; 
         private readonly UserManager<ApplicationUser> _userManager; 
         private readonly ILogger<UserController> _logger; 
-        private readonly ICacheService _cacheService;
 
-        public UserController(IUserRepository userRepository, UserManager<ApplicationUser> userManager, ILogger<UserController> logger, ICacheService cacheService)
+        public UserController(IUserRepository userRepository, UserManager<ApplicationUser> userManager, ILogger<UserController> logger)
         {
-            _UserRepo = userRepository;
+            _userRepo = userRepository;
             _userManager = userManager;
             _logger = logger;
-            _cacheService = cacheService;
+        }
+
+        [HttpGet("GetRole")]
+        public async Task<IActionResult> GetRole()
+        {
+            var userId = _userRepo.GetUserIdFromJwtClaims();
+
+            if (userId == null)
+            {
+                return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
+            }
+
+            var user = await _userRepo.GetUserByIdAsync(userId);
+
+            if (user == null)
+            {
+                return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
+            }
+
+            var role = await _userManager.GetRolesAsync(user);
+            if (role != null)
+            {
+                var response = new { Message = "User retrieved successfully.", Role = role };
+                return Ok(response);
+            }
+            else
+            {
+                return BadRequest();
+            }
+        }
+
+        [HttpGet("UserProfile")]
+        public async Task<IActionResult> UserProfile()
+        {
+            var userId = _userRepo.GetUserIdFromJwtClaims();
+
+            if (userId == null)
+            {
+                return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
+            }
+
+            var user = await _userRepo.GetUserByIdAsync(userId);
+
+            if(user == null)
+            {
+                return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
+            }
+
+            var role = await _userManager.GetRolesAsync(user);
+
+            var userInfo = new UserInformation
+            {
+                UserName = user.UserName,
+                Email = user.Email,
+                Country = user.Country,
+                PhoneNumber = user.PhoneNumber,
+                ImagePath = user.ImagePath,
+                Role = (List<string>)role
+            };
+
+            var response = new { Message = "User retrieved successfully.", User = userInfo};
+
+            return Ok(response);
         }
 
         // Get all users - Typically restricted to Admin or Manager roles for security
         [HttpGet("GetAllUsers")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> Get([FromQuery] PaginationParams paginationParams)
         {
             try
             {
-                // Create a unique cache key based on page number and size
-                var cacheKey = $"Users:Page:{paginationParams.PageNumber}:Size:{paginationParams.PageSize}";
-
-                // Try to get cached data
-                var cachedUsers = await _cacheService.GetAsync<object>(cacheKey);
-                if (cachedUsers != null)
-                {
-                    _logger.LogInformation("Users retrieved from cache.");
-                    return Ok(new
-                    {
-                        Message = "Users retrieved from cache.",
-                        Users = cachedUsers
-                    });
-                }
-
-                // If not in cache, retrieve from repository
-                var paginatedUsers = await _UserRepo.GetAllPaginationAsync(paginationParams.PageNumber, paginationParams.PageSize);
+                var paginatedUsers = await _userRepo.GetAllPaginationAsync(paginationParams.PageNumber, paginationParams.PageSize);
 
                 if (paginatedUsers == null || !paginatedUsers.Items.Any())
                 {
@@ -81,9 +125,6 @@ namespace Task_Management_API.Controllers
                     }
                 };
 
-                // Cache the response for 5 minutes
-                await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(5));
-
                 return Ok(response);
             }
             catch (Exception ex)
@@ -96,12 +137,12 @@ namespace Task_Management_API.Controllers
 
 
         [HttpPut("Update")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
-        public async Task<IActionResult> Update([FromBody] UserInformation updatedUser)
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
+        public async Task<IActionResult> Update([FromForm] UserEditProfile updatedUser)
         {
             try
             {
-                var userId = _UserRepo.GetUserIdFromJwtClaims();
+                var userId = _userRepo.GetUserIdFromJwtClaims();
                 if (userId == null)
                 {
                     _logger.LogWarning("Unauthorized attempt to update user profile.");
@@ -114,7 +155,37 @@ namespace Task_Management_API.Controllers
                     return BadRequest(new ErrorResponse { Message = "Invalid user data.", Errors = errors });
                 }
 
-                var result = await _UserRepo.UpdateUserAsync(userId, updatedUser);
+                string? imagePath = null;
+
+                if (updatedUser.Image != null)
+                {
+                    var imageFileName = Guid.NewGuid().ToString() + Path.GetExtension(updatedUser.Image.FileName);
+                    var imageFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Images");
+
+                    if (!Directory.Exists(imageFolderPath))
+                        Directory.CreateDirectory(imageFolderPath);
+
+                    var imageFullPath = Path.Combine(imageFolderPath, imageFileName);
+
+                    using (var stream = new FileStream(imageFullPath, FileMode.Create))
+                    {
+                        await updatedUser.Image.CopyToAsync(stream);
+                    }
+
+                    imagePath = $"Images/{imageFileName}"; 
+                }
+
+                var newUser = new UserInformation()
+                {
+                    UserName = updatedUser.UserName,
+                    Email = updatedUser.Email,
+                    PhoneNumber = updatedUser.PhoneNumber,
+                    Country = updatedUser.Country,
+                    Role = [updatedUser.Role[0]],
+                    ImagePath = imagePath
+                };
+
+                var result = await _userRepo.UpdateUserAsync(userId, newUser);
 
                 if (!result.Succeeded)
                 {
@@ -123,34 +194,32 @@ namespace Task_Management_API.Controllers
                     return BadRequest(new ErrorResponse { Message = "Update failed.", Errors = errors });
                 }
 
-                //  Invalidate cache after successful update
-                await _cacheService.RemoveAsync($"user:{userId}");
-
                 _logger.LogInformation("User {UserId} updated successfully.", userId);
                 return Ok(new { Message = "User updated successfully." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating user {UserId}.", _UserRepo.GetUserIdFromJwtClaims());
+                _logger.LogError(ex, "Error updating user {UserId}.", _userRepo.GetUserIdFromJwtClaims());
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse { Message = "An error occurred." });
             }
         }
 
 
+
         [HttpDelete("Delete")]
-        [Authorize(Roles = Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.User)]
         public async Task<IActionResult> Delete()
         {
             try
             {
-                var userId = _UserRepo.GetUserIdFromJwtClaims();
+                var userId = _userRepo.GetUserIdFromJwtClaims();
                 if (userId == null)
                 {
                     _logger.LogWarning("Unauthorized attempt to delete user.");
                     return Unauthorized(new ErrorResponse { Message = "User ID not found in JWT claims." });
                 }
 
-                var result = await _UserRepo.DeleteUserAsync(userId);
+                var result = await _userRepo.DeleteUserAsync(userId);
 
                 if (!result.Succeeded)
                 {
@@ -159,15 +228,12 @@ namespace Task_Management_API.Controllers
                     return BadRequest(new ErrorResponse { Message = "Delete failed.", Errors = errors });
                 }
 
-                // ✅ Invalidate cache after successful delete
-                await _cacheService.RemoveAsync($"user:{userId}");
-
                 _logger.LogInformation("User {UserId} deleted successfully.", userId);
                 return Ok(new { Message = "User deleted successfully." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting user {UserId}.", _UserRepo.GetUserIdFromJwtClaims());
+                _logger.LogError(ex, "Error deleting user {UserId}.", _userRepo.GetUserIdFromJwtClaims());
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse { Message = "An error occurred." });
             }
         }
@@ -185,7 +251,7 @@ namespace Task_Management_API.Controllers
                     return BadRequest(new ErrorResponse { Message = "User ID is required." });
                 }
 
-                var result = await _UserRepo.DeleteUserAsync(userId);
+                var result = await _userRepo.DeleteUserAsync(userId);
 
                 if (!result.Succeeded)
                 {

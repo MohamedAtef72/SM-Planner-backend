@@ -72,7 +72,7 @@ namespace Task_Management_API.Infrastructure.Repositories
             if (task == null)
                 return false;
 
-            await DeleteAsync(task);
+            await DeleteByIdAsync(taskId);
             return true;
         }
     }

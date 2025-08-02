@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +9,8 @@ using Task_Management_Api.Application.DTO;
 using Task_Management_Api.Application.Interfaces;
 using Task_Management_API.Domain.Constants;
 using Task_Management_API.Domain.Models;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 
 namespace Task_Management_API.Controllers
 {
@@ -18,69 +19,67 @@ namespace Task_Management_API.Controllers
     public class AccountController : ControllerBase
     {
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IWebHostEnvironment _webHostEnvironment;
         private readonly IConfiguration _config;
         private readonly ILogger<AccountController> _logger;
-        private readonly ICacheService _cacheService;
         private readonly IAuthService _authService;
-        private readonly ITokenBlacklistService _tokenBlacklistService;
 
         public AccountController(
             UserManager<ApplicationUser> userManager,
             IConfiguration config,
             ILogger<AccountController> logger,
-            ICacheService cacheService,
             IAuthService authService,
-            ITokenBlacklistService tokenBlacklistService)
+            IWebHostEnvironment webHostEnvironment)
         {
             _userManager = userManager;
             _config = config;
             _logger = logger;
-            _cacheService = cacheService;
             _authService = authService;
-            _tokenBlacklistService = tokenBlacklistService;
+            _webHostEnvironment = webHostEnvironment;
         }
 
         [HttpPost("Register")]
-        public async Task<IActionResult> Register([FromBody] UserRegister UserFromRequest)
+        public async Task<IActionResult> Register([FromForm] UserRegister dto)
         {
-            // 1. Validate incoming request body
-            if (UserFromRequest == null)
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Message = "User registration data is null.",
-                    Errors = new List<string> { "Request body cannot be empty." }
-                });
-            }
-
-            // 2. Validate model state (e.g., required fields, format)
             if (!ModelState.IsValid)
             {
-                // Extract model state errors into a list for consistent response
-                var errors = ModelState.Values
-                               .SelectMany(v => v.Errors)
-                               .Select(e => e.ErrorMessage)
-                               .ToList();
+                var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToList();
                 return BadRequest(new ErrorResponse
                 {
                     Message = "Validation failed.",
-                    Errors = errors
                 });
             }
 
+            string imagePath = null;
+            if (dto.Image != null && dto.Image.Length > 0)
+            {
+                var fileName = Guid.NewGuid().ToString() + Path.GetExtension(dto.Image.FileName);
+                var path = Path.Combine("wwwroot/images", fileName);
+
+                using (var image = SixLabors.ImageSharp.Image.Load(dto.Image.OpenReadStream()))
+                {
+                    image.Mutate(x => x.Resize( 350, 270)); 
+
+                    image.Save(path); 
+                }
+
+                imagePath = $"images/{fileName}";
+            }
+
+
             var user = new ApplicationUser
             {
-                UserName = UserFromRequest.UserName,
-                Email = UserFromRequest.Email,
-                PhoneNumber = UserFromRequest.PhoneNumber,
-                Country = UserFromRequest.Country,
+                UserName = dto.UserName,
+                Email = dto.Email,
+                PhoneNumber = dto.PhoneNumber,
+                Country = dto.Country,
+                ImagePath = imagePath
             };
 
-            IdentityResult result = await _userManager.CreateAsync(user, UserFromRequest.Password);
+            var result = await _userManager.CreateAsync(user, dto.Password);
 
             if (!result.Succeeded)
             {
-                // If IdentityResult indicates failure, extract errors
                 var identityErrors = result.Errors.Select(e => e.Description).ToList();
                 return BadRequest(new ErrorResponse
                 {
@@ -88,22 +87,18 @@ namespace Task_Management_API.Controllers
                     Errors = identityErrors
                 });
             }
-            else
+
+            await _userManager.AddClaimsAsync(user, new List<Claim>
             {
-                // Add default claims for the new user
-                var userClaims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.NameIdentifier, user.Id),
-                    new Claim(ClaimTypes.Name, user.UserName),
-                };
-                await _userManager.AddClaimsAsync(user, userClaims);
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.Name, user.UserName),
+            });
 
-                await _userManager.AddToRoleAsync(user, Roles.User);
+            await _userManager.AddToRoleAsync(user, Roles.User);
 
-                // Return a success response
-                return Ok(new { Message = "User registered successfully.", UserId = user.Id });
-            }
+            return Ok(new { Message = "User registered successfully."});
         }
+
 
 
         [HttpPost("Login")]
@@ -114,20 +109,14 @@ namespace Task_Management_API.Controllers
                 return BadRequest(new ErrorResponse
                 {
                     Message = "User login data is null.",
-                    Errors = new List<string> { "Request body cannot be empty." }
                 });
             }
 
             if (!ModelState.IsValid)
             {
-                var errors = ModelState.Values
-                               .SelectMany(v => v.Errors)
-                               .Select(e => e.ErrorMessage)
-                               .ToList();
                 return BadRequest(new ErrorResponse
                 {
                     Message = "Validation failed.",
-                    Errors = errors
                 });
             }
 
@@ -145,13 +134,18 @@ namespace Task_Management_API.Controllers
             }
 
             var userClaims = await _userManager.GetClaimsAsync(userFromDb);
-            var roles = await _userManager.GetRolesAsync(userFromDb);
+            var authClaims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, userFromDb.Id),
+                new Claim(ClaimTypes.Name, userFromDb.UserName),
+            };
 
-            var authClaims = new List<Claim>(userClaims);
+            var roles = await _userManager.GetRolesAsync(userFromDb);
             foreach (var role in roles)
             {
                 authClaims.Add(new Claim(ClaimTypes.Role, role));
             }
+
 
             var signInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecritKey"]));
             var credentials = new SigningCredentials(signInKey, SecurityAlgorithms.HmacSha256);
@@ -191,53 +185,41 @@ namespace Task_Management_API.Controllers
         [HttpPost("Refresh")]
         public async Task<IActionResult> Refresh([FromBody] AuthResultDTO request)
         {
-            var principal = _authService.GetPrincipalFromExpiredToken(request.AccessToken);
-            if (principal == null)
-                return BadRequest("Invalid access token.");
-
-            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            var user = await _userManager.Users
-                .Include(u => u.RefreshTokens)
-                .FirstOrDefaultAsync(u => u.Id == userId);
-
-            if (user == null)
-                return Unauthorized("User not found.");
-
-            var storedRefreshToken = user.RefreshTokens
-                .FirstOrDefault(rt => rt.Token == request.RefreshToken);
-
-            if (storedRefreshToken == null || storedRefreshToken.ExpiryDate < DateTime.UtcNow)
-                return Unauthorized("Invalid or expired refresh token.");
-
-            var result = await _authService.GenerateTokenAsync(user, HttpContext.Connection.RemoteIpAddress?.ToString()!);
-
-            user.RefreshTokens.Remove(storedRefreshToken);
-            user.RefreshTokens.Add(new RefreshToken
+            try
             {
-                Token = result.RefreshToken,
-                CreatedDate = DateTime.UtcNow,
-                ExpiryDate = DateTime.UtcNow.AddDays(7),
-                CreatedByIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                UserId = user.Id
-            });
+                //Refresh token request received
 
-            await _userManager.UpdateAsync(user);
+                if (string.IsNullOrEmpty(request?.AccessToken) || string.IsNullOrEmpty(request?.RefreshToken))
+                    return BadRequest("Access token and refresh token are required.");
 
-            return Ok(result);
-        }
+                var principal = _authService.GetPrincipalFromExpiredToken(request.AccessToken);
+                if (principal == null)
+                    return BadRequest("Invalid access token.");
 
+                var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+                var user = await _userManager.Users
+                    .Include(u => u.RefreshTokens)
+                    .FirstOrDefaultAsync(u => u.Id == userId);
 
+                if (user == null)
+                    return Unauthorized("User not found.");
 
-        [Authorize]
-        [HttpPost("Logout")]
-        public async Task<IActionResult> Logout()
-        {
-            var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
-            var expiresAt = DateTime.UtcNow.AddMinutes(15); 
+                var storedRefreshToken = user.RefreshTokens?.FirstOrDefault(rt => rt.Token == request.RefreshToken);
+                if (storedRefreshToken == null)
+                    return Unauthorized("Invalid refresh token.");
 
-            await _tokenBlacklistService.AddTokenToBlacklistAsync(token, expiresAt);
-            return Ok(new { Message = "Logged out successfully" });
+                if (storedRefreshToken.ExpiryDate < DateTime.UtcNow)
+                    return Unauthorized("Expired refresh token.");
+
+                var result = await _authService.GenerateTokenAsync(user, HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing token");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
 
     }

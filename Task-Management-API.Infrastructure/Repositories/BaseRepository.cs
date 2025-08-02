@@ -16,9 +16,9 @@ namespace Task_Management_API.Infrastructure.Repositories
             _dbSet = context.Set<T>();
         }
 
-        public virtual async Task<PaginationListHelper<T>> GetAllPaginationAsync(int pageNumber, int pageSize)
+        public virtual async Task<PaginationListHelper<T>> GetAllPaginationAsync(int pageNumber, int pageSize , bool includeUser)
         {
-            IQueryable<T> query = _dbSet;
+            IQueryable<T> query = _dbSet.Include("User"); ;
             return await PaginationListHelper<T>.CreateAsync(query, pageNumber, pageSize);
         }
 
@@ -51,12 +51,13 @@ namespace Task_Management_API.Infrastructure.Repositories
 
         public virtual async Task<bool> DeleteByIdAsync(int id)
         {
-            var entity = await GetByIdAsync(id);
-            if (entity == null)
-                return false;
+    var entity = await GetByIdAsync(id);
+    if (entity == null)
+        return false;
 
-            _dbSet.Remove(entity);
-            return true;
+    _dbSet.Remove(entity);
+    await _context.SaveChangesAsync(); // ✅ This line is necessary
+    return true;
         }
 
         public virtual async Task<bool> ExistsAsync(int id)

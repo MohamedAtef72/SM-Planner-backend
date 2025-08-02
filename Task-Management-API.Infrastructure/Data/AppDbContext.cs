@@ -11,6 +11,16 @@ namespace Task_Management_API.Infrastructure.Data
         }
         public DbSet<AppTask> Tasks { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<AppTask>()
+                .HasOne(t => t.User)
+                .WithMany() // Or WithMany(u => u.Tasks) if ApplicationUser has List<TaskItem>
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        }
 
     }
 }

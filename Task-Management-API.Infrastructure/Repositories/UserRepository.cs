@@ -23,20 +23,31 @@ namespace Task_Management_API.Infrastructure.Repositories
             _httpContextAccessor = httpContextAccessor;
         }
         // Get all users Pagination
-
         public async Task<PaginationListHelper<UserInformation>> GetAllPaginationAsync(int pageNumber, int pageSize)
         {
+            // Step 1: Get paginated users without roles
             var query = _userManager.Users
-                        .Select(user => new UserInformation
-                        {
-                            UserName = user.UserName,
-                            Email = user.Email,
-                            PhoneNumber = user.PhoneNumber,
-                            Country = user.Country
-                        })
-                        .AsNoTracking();
+                .Select(user => new UserInformation
+                {
+                    Id = user.Id,
+                    UserName = user.UserName,
+                    Email = user.Email,
+                    PhoneNumber = user.PhoneNumber,
+                    Country = user.Country
+                })
+                .AsNoTracking();
 
-            return await PaginationListHelper<UserInformation>.CreateAsync(query, pageNumber, pageSize);
+            var pagedUsers = await PaginationListHelper<UserInformation>.CreateAsync(query, pageNumber, pageSize);
+
+            // Step 2: Fill roles for each user
+            foreach (var userInfo in pagedUsers.Items)
+            {
+                var user = await _userManager.FindByNameAsync(userInfo.UserName);
+                userInfo.Role = (await _userManager.GetRolesAsync(user)).ToList();
+            }
+
+            return pagedUsers;
+
         }
 
 
@@ -46,6 +57,7 @@ namespace Task_Management_API.Infrastructure.Repositories
             var users = await _userManager.Users.ToListAsync();
             var usersInformation = users.Select(user => new UserInformation
             {
+                Id = user.Id,
                 UserName = user.UserName,
                 Email = user.Email,
                 PhoneNumber = user.PhoneNumber,
@@ -90,9 +102,15 @@ namespace Task_Management_API.Infrastructure.Repositories
             user.PhoneNumber = updatedUser.PhoneNumber;
             user.Country = updatedUser.Country;
 
+            if (!string.IsNullOrEmpty(updatedUser.ImagePath))
+            {
+                user.ImagePath = updatedUser.ImagePath;
+            }
+
             var result = await _userManager.UpdateAsync(user);
             return result;
         }
+
 
         // Delete user
         public async Task<IdentityResult> DeleteUserAsync(string userId)

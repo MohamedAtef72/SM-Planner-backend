@@ -9,7 +9,7 @@ using Task_Management_Api.Application.DTO;
 using Task_Management_Api.Application.Interfaces;
 using Task_Management_API.Infrastructure.Repositories;
 using Task_Management_API.Infrastructure.Services;
-using System.IdentityModel.Tokens.Jwt;
+using AspNetCoreRateLimit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,17 +33,6 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
-// Redis Cache
-builder.Services.AddStackExchangeRedisCache(options =>
-{
-    options.Configuration = builder.Configuration.GetConnectionString("RedisConnection");
-});
-
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddScoped<ICacheService, RedisCacheService>();
-
-// Token Blacklist Service
-builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 
 // Application Services
 builder.Services.AddScoped<IRoleSeederService, RoleSeederService>();
@@ -69,21 +58,40 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = false,
         ClockSkew = TimeSpan.Zero
     };
+});
 
-    options.Events = new JwtBearerEvents
-    {
-        OnTokenValidated = async context =>
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp",
+        policy =>
         {
-            var tokenBlacklistService = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklistService>();
-            var token = context.SecurityToken as JwtSecurityToken;
+            policy.WithOrigins("http://localhost:3000") // your React app
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
+});
 
-            if (token != null && await tokenBlacklistService.IsTokenBlacklistedAsync(token.RawData))
-            {
-                context.Fail("Token is blacklisted.");
-            }
+// Rate Limiting
+builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(options =>
+{
+    options.GeneralRules = new List<RateLimitRule>
+    {
+        new RateLimitRule
+        {
+            Endpoint = "*",
+            Limit = 100,
+            Period = "1m"
         }
     };
 });
+builder.Services.AddInMemoryRateLimiting();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+// Admin Setting
+builder.Services.Configure<AdminSetting>(
+    builder.Configuration.GetSection("AdminSettings"));
+
 
 var app = builder.Build();
 
@@ -91,7 +99,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.EnsureCreated(); // أو dbContext.Database.Migrate(); لو عندك Migration
+    dbContext.Database.EnsureCreated(); 
     var seeder = scope.ServiceProvider.GetRequiredService<IRoleSeederService>();
     await seeder.SeedRolesAndAdminAsync();
 }
@@ -102,8 +110,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
 app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseIpRateLimiting();
+app.UseCors("AllowReactApp");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

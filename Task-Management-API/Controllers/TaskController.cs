@@ -18,43 +18,41 @@ namespace Task_Management_API.Controllers
         private readonly ITaskRepository _taskRepo;
         private readonly IUserRepository _userRepo;
         private readonly ILogger<TaskController> _logger;
-        private readonly ICacheService _cacheService;
 
         public TaskController(ITaskRepository taskRepository, IUserRepository userRepository,
-            ILogger<TaskController> logger, ICacheService cacheService)
+            ILogger<TaskController> logger)
         {
             _taskRepo = taskRepository;
             _userRepo = userRepository;
             _logger = logger;
-            _cacheService = cacheService;
         }
 
         // Get All Tasks For Admins - Only Admins can see all tasks across the system
-        [HttpGet("Get")]
+        [HttpGet("GetAllTasks")]
         [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> GetAllTasks([FromQuery] PaginationParams paginationParams)
         {
             try
             {
-                string cacheKey = $"all_tasks_page_{paginationParams.PageNumber}_size_{paginationParams.ValidatedPageSize}";
-
-                // Try to get from cache first
-                var cachedTasks = await _cacheService.GetAsync<object>(cacheKey);
-                if (cachedTasks != null)
-                {
-                    _logger.LogInformation("Tasks retrieved from cache for page {PageNumber}", paginationParams.PageNumber);
-                    return Ok(cachedTasks);
-                }
-
                 var paginatedTasks = await _taskRepo.GetAllPaginationAsync(
                     paginationParams.PageNumber,
-                    paginationParams.ValidatedPageSize);
+                    paginationParams.ValidatedPageSize,
+                    includeUser: true);
 
                 if (!paginatedTasks.Items.Any())
                 {
                     _logger.LogInformation("No tasks found.");
                     return Ok(new { Message = "No tasks found.", Tasks = new List<AppTask>() });
                 }
+
+                var tasksDto = paginatedTasks.Items.Select(t => new TaskWithUserDto
+                {
+                    Id = t.Id,
+                    Description = t.Description,
+                    Title = t.Title,
+                    Status = t.Status,
+                    UserName = t.User?.UserName 
+                }).ToList();
 
                 Response.Headers.Add("X-Pagination", JsonSerializer.Serialize(new
                 {
@@ -67,19 +65,15 @@ namespace Task_Management_API.Controllers
                 var response = new
                 {
                     Message = "Tasks retrieved successfully.",
-                    Tasks = paginatedTasks.Items,
+                    Tasks = tasksDto,
                     PageInfo = new
                     {
                         paginatedTasks.CurrentPage,
                         paginatedTasks.PageSize,
+                        paginatedTasks.TotalPages,
                         paginatedTasks.TotalCount,
-                        paginatedTasks.TotalPages
                     }
                 };
-
-                // Cache the response for 5 minutes
-                await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(5));
-
                 return Ok(response);
             }
             catch (Exception ex)
@@ -90,7 +84,7 @@ namespace Task_Management_API.Controllers
         }
 
         [HttpGet("MyTasks")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> GetUserTasks([FromQuery] PaginationParams paginationParams)
         {
             try
@@ -104,19 +98,9 @@ namespace Task_Management_API.Controllers
 
                 if (!await _userRepo.UserExistsAsync(userId))
                 {
-                    _logger.LogWarning("GetUserTasks: User with ID {UserId} not found.", userId);
+                    _logger.LogWarning($"GetUserTasks: User with ID {userId} not found.");
                     return NotFound(new ErrorResponse { Message = "User not found." });
                 }
-
-                string cacheKey = $"user_tasks_{userId}_page{paginationParams.PageNumber}_size{paginationParams.PageSize}";
-
-                var cachedResponse = await _cacheService.GetAsync<object>(cacheKey);
-                if (cachedResponse != null)
-                {
-                    _logger.LogInformation("User tasks retrieved from cache for user {UserId}, page {PageNumber}", userId, paginationParams.PageNumber);
-                    return Ok(cachedResponse);
-                }
-
                 var paginatedTasks = await _taskRepo.GetUserTasksPaginationAsync(userId, paginationParams.PageNumber, paginationParams.PageSize);
 
                 var response = new
@@ -127,15 +111,9 @@ namespace Task_Management_API.Controllers
                     {
                         paginatedTasks.CurrentPage,
                         paginatedTasks.PageSize,
-                        paginatedTasks.TotalCount,
                         paginatedTasks.TotalPages
                     }
                 };
-
-                await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(10));
-
-                _logger.LogInformation("Tasks retrieved and cached for user {UserId}, page {PageNumber}. Count: {Count}", userId, paginationParams.PageNumber, paginatedTasks.Items.Count);
-
                 return Ok(response);
             }
             catch (Exception ex)
@@ -144,12 +122,9 @@ namespace Task_Management_API.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse { Message = "An error occurred while retrieving your tasks." });
             }
         }
-
-
-
         // Get specific task by ID
-        [HttpGet("{id}")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [HttpGet("SpecificTask/{id}")]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> GetTaskById(int id)
         {
             try
@@ -160,17 +135,6 @@ namespace Task_Management_API.Controllers
                     _logger.LogWarning("GetTaskById: User ID could not be determined from token.");
                     return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
                 }
-
-                string cacheKey = $"task_{id}_user_{userId}";
-
-                // Try to get from cache first
-                var cachedTask = await _cacheService.GetAsync<object>(cacheKey);
-                if (cachedTask != null)
-                {
-                    _logger.LogInformation("Task {TaskId} retrieved from cache for user {UserId}", id, userId);
-                    return Ok(cachedTask);
-                }
-
                 AppTask? task = null;
                 if (await _userRepo.IsUserInRoleAsync(userId, Roles.Admin))
                 {
@@ -188,6 +152,7 @@ namespace Task_Management_API.Controllers
 
                 var taskInfo = new TaskInformation
                 {
+                    Id = task.Id,
                     Title = task.Title,
                     Description = task.Description,
                     Status = task.Status,
@@ -195,10 +160,6 @@ namespace Task_Management_API.Controllers
                 };
 
                 var response = new { Message = "Task retrieved successfully.", Task = taskInfo };
-
-                // Cache individual task for 15 minutes
-                await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(15));
-
                 _logger.LogInformation("Task {TaskId} retrieved successfully for user {UserId}.", id, userId);
                 return Ok(response);
             }
@@ -211,7 +172,7 @@ namespace Task_Management_API.Controllers
 
         // Add a new Task
         [HttpPost("Add")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> AddTask([FromBody] TaskInformation taskFromRequest)
         {
             try
@@ -245,27 +206,25 @@ namespace Task_Management_API.Controllers
                     UserId = userId
                 };
 
-                _taskRepo.AddAsync(task);
+                await _taskRepo.AddAsync(task);
                 await _taskRepo.SaveAsync();
 
-                // Invalidate user tasks cache after adding new task
-                await _cacheService.RemoveAsync($"user_tasks_{userId}");
-                await _cacheService.RemoveAsync($"user_task_count_{userId}");
-
-                _logger.LogInformation("Task created successfully for user {UserId}", userId);
+                // Reload the task from the database to get the generated Id
+                var savedTask = await _taskRepo.GetByIdAsync(task.Id);
 
                 return CreatedAtAction(
                     nameof(GetTaskById),
-                    new { id = task.Id },
+                    new { id = savedTask.Id },
                     new TaskResponse
                     {
                         Message = "Task created successfully.",
                         Task = new TaskInformation
                         {
-                            Title = task.Title,
-                            Description = task.Description,
-                            Status = task.Status,
-                            DueDate = task.DueDate
+                            Id = savedTask.Id,
+                            Title = savedTask.Title,
+                            Description = savedTask.Description,
+                            Status = savedTask.Status,
+                            DueDate = savedTask.DueDate
                         }
                     });
             }
@@ -278,7 +237,7 @@ namespace Task_Management_API.Controllers
 
         // Update an existing Task
         [HttpPut("Update/{id}")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> UpdateTask(int id, [FromBody] TaskInformation taskFromRequest)
         {
             try
@@ -322,15 +281,11 @@ namespace Task_Management_API.Controllers
                 _taskRepo.UpdateAsync(taskFromDatabase);
                 await _taskRepo.SaveAsync();
 
-                // Invalidate related caches after update
-                await _cacheService.RemoveAsync($"task_{id}_user_{userId}");
-                await _cacheService.RemoveAsync($"user_tasks_{userId}");
-                await _cacheService.RemoveAsync($"user_tasks_{taskFromDatabase.UserId}"); // In case admin updated someone else's task
-
                 _logger.LogInformation("Task {TaskId} updated successfully by user {UserId}", id, userId);
 
                 var updatedTaskInfo = new TaskInformation
                 {
+                    Id = taskFromDatabase.Id,
                     Title = taskFromDatabase.Title,
                     Description = taskFromDatabase.Description,
                     Status = taskFromDatabase.Status,
@@ -348,7 +303,7 @@ namespace Task_Management_API.Controllers
 
         // Delete a Task
         [HttpDelete("Delete/{taskId}")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> DeleteTask(int taskId)
         {
             try
@@ -382,14 +337,6 @@ namespace Task_Management_API.Controllers
                 {
                     return NotFound(new ErrorResponse { Message = $"Task with ID {taskId} not found or you don't have permission to delete it." });
                 }
-
-                // Invalidate related caches after deletion
-                await _cacheService.RemoveAsync($"task_{taskId}_user_{userId}");
-                await _cacheService.RemoveAsync($"user_tasks_{userId}");
-                await _cacheService.RemoveAsync($"user_tasks_{taskOwnerId}");
-                await _cacheService.RemoveAsync($"user_task_count_{userId}");
-                await _cacheService.RemoveAsync($"user_task_count_{taskOwnerId}");
-
                 _logger.LogInformation("Task {TaskId} deleted successfully by user {UserId}", taskId, userId);
 
                 return Ok(new { Message = $"Task with ID {taskId} deleted successfully." });
@@ -403,7 +350,7 @@ namespace Task_Management_API.Controllers
 
         // Get task count for current user
         [HttpGet("Count")]
-        [Authorize(Roles = Roles.Admin + "," + Roles.User + "," + Roles.Manager)]
+        [Authorize(Roles = Roles.Admin + "," + Roles.User)]
         public async Task<IActionResult> GetTaskCount()
         {
             try
@@ -414,21 +361,8 @@ namespace Task_Management_API.Controllers
                     return Unauthorized(new ErrorResponse { Message = "User ID could not be determined from the token." });
                 }
 
-                string cacheKey = $"user_task_count_{userId}";
-
-                // Try to get from cache first
-                var cachedCount = await _cacheService.GetAsync<object>(cacheKey);
-                if (cachedCount != null)
-                {
-                    _logger.LogInformation("Task count retrieved from cache for user {UserId}", userId);
-                    return Ok(cachedCount);
-                }
-
                 var count = await _taskRepo.GetUserTaskCountAsync(userId);
                 var response = new { Message = "Task count retrieved successfully.", Count = count };
-
-                // Cache task count for 5 minutes
-                await _cacheService.SetAsync(cacheKey, response, TimeSpan.FromMinutes(5));
 
                 return Ok(response);
             }

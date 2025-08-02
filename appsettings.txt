@@ -1,0 +1,32 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=.;Database=TaskDb;Encrypt=false"
+  },
+  "Redis": {
+    "InstanceName": "TaskManagementAPI",
+    "DefaultCacheExpiration": "00:15:00"
+  },
+  "AdminSettings": {
+    "AdminEmails": [
+      "admin@company.com",
+      "manager@company.com",
+      "supervisor@company.com"
+    ],
+    "DefaultAdminPassword": "Admin@123456"
+  },
+  "JWT": {
+    "SecritKey": "Atef1234Body5678Mazen9101112@ModyMoreCharacters2024",
+    "AudienceIP": "Task",
+    "IssuerIP": "http://localhost:5122/"
+  }
+}
+
+Add-Migration InitialCreate -StartupProject Task-Management-API -Project Task-Management-API.Infrastructure
+Update-Database -StartupProject Task-Management-API -Project Task-Management-API.Infrastructure

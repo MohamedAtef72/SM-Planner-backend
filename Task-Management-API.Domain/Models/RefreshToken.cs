@@ -1,4 +1,5 @@
-﻿using Task_Management_API.Domain.Models;
+﻿using System.Text.Json.Serialization;
+using Task_Management_API.Domain.Models;
 
 public class RefreshToken
 {
@@ -8,6 +9,6 @@ public class RefreshToken
     public DateTime ExpiryDate { get; set; }
     public DateTime CreatedDate { get; set; }
     public string CreatedByIp { get; set; } = string.Empty;
-
+    [JsonIgnore]
     public ApplicationUser User { get; set; } = null!;
 }

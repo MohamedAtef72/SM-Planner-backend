@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.AspNetCore.Http;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -19,5 +20,6 @@ namespace Task_Management_Api.Application.DTO
         public string PhoneNumber { get; set; }
         [Required]
         public string Country { get; set; }
+        public IFormFile? Image { get; set; }
     }
 }

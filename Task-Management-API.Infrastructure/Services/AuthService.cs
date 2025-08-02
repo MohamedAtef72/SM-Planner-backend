@@ -39,11 +39,15 @@ namespace Task_Management_API.Infrastructure.Services
                 _context.RefreshTokens.Remove(existingToken);
             }
 
+            // Fixed: Use default value if config is missing
+            var refreshTokenDays = _config["JWT:RefreshTokenExpirationDays"];
+            var expirationDays = !string.IsNullOrEmpty(refreshTokenDays) ? int.Parse(refreshTokenDays) : 7;
+
             var refreshTokenEntity = new RefreshToken
             {
                 Token = refreshToken,
                 UserId = user.Id,
-                ExpiryDate = DateTime.UtcNow.AddDays(int.Parse(_config["JWT:RefreshTokenExpirationDays"]!)),
+                ExpiryDate = DateTime.UtcNow.AddDays(expirationDays),
                 CreatedDate = DateTime.UtcNow,
                 CreatedByIp = ipAddress
             };
@@ -60,18 +64,32 @@ namespace Task_Management_API.Infrastructure.Services
 
         public string GenerateAccessToken(IEnumerable<Claim> claims)
         {
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecritKey"]!));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            try
+            {
+                // Fixed: Correct configuration key name
+                var secretKey = _config["JWT:SecritKey"];
+                if (string.IsNullOrEmpty(secretKey))
+                {
+                    throw new InvalidOperationException("JWT:SecritKey is not configured in appsettings.json");
+                }
 
-            var token = new JwtSecurityToken(
-                issuer: _config["JWT:IssuerIP"],
-                audience: _config["JWT:AudienceIP"],
-                claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(double.Parse(_config["JWT:AccessTokenExpirationMinutes"]!)),
-                signingCredentials: creds
-            );
+                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+                var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+                var token = new JwtSecurityToken(
+                    issuer: _config["JWT:Issuer"],
+                    audience: _config["JWT:Audience"],
+                    claims: claims,
+                    expires: DateTime.UtcNow.AddMinutes(GetAccessTokenExpirationMinutes()),
+                    signingCredentials: creds
+                );
+
+                return new JwtSecurityTokenHandler().WriteToken(token);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error generating access token: {ex.Message}", ex);
+            }
         }
 
         public string GenerateRefreshToken()
@@ -86,25 +104,38 @@ namespace Task_Management_API.Infrastructure.Services
 
         public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token)
         {
-            var tokenValidationParameters = new TokenValidationParameters
+            try
             {
-                ValidateAudience = true,
-                ValidateIssuer = true,
-                ValidIssuer = _config["JWT:IssuerIP"],
-                ValidAudience = _config["JWT:AudienceIP"],
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecritKey"]!)),
-                ValidateLifetime = false 
-            };
+                var secretKey = _config["JWT:SecritKey"];
+                if (string.IsNullOrEmpty(secretKey))
+                {
+                    throw new InvalidOperationException("JWT:SecritKey is not configured");
+                }
 
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+                var tokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateAudience = true,
+                    ValidateIssuer = true,
+                    ValidIssuer = _config["JWT:IssuerIP"],
+                    ValidAudience = _config["JWT:AudienceIP"],
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecritKey"]!)),
+                    ValidateLifetime = false
+                };
 
-            if (securityToken is not JwtSecurityToken jwtSecurityToken ||
-                !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var principal = tokenHandler.ValidateToken(token, tokenValidationParameters, out SecurityToken securityToken);
+
+                if (securityToken is not JwtSecurityToken jwtSecurityToken ||
+                    !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+                    return null;
+
+                return principal;
+            }
+            catch (Exception)
+            {
                 return null;
-
-            return principal;
+            }
         }
 
         private List<Claim> GetClaims(ApplicationUser user)
@@ -112,8 +143,15 @@ namespace Task_Management_API.Infrastructure.Services
             return new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
-                new Claim(ClaimTypes.Email, user.Email!)
+                new Claim(ClaimTypes.Email, user.Email!),
+                new Claim(ClaimTypes.Name, user.UserName!)
             };
+        }
+
+        private double GetAccessTokenExpirationMinutes()
+        {
+            var expirationMinutes = _config["JWT:AccessTokenExpirationMinutes"];
+            return !string.IsNullOrEmpty(expirationMinutes) ? double.Parse(expirationMinutes) : 60.0;
         }
     }
 }

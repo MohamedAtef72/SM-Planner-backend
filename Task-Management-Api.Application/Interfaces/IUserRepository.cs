@@ -27,6 +27,7 @@ namespace Task_Management_Api.Application.Interfaces
 
         // Save changes
         Task SaveAsync();
+        //Task SavePath(string imageUrl);
 
         // New Role Management Methods
         Task<IdentityResult> AssignRoleToUserAsync(string userId, string roleName);

@@ -34,7 +34,6 @@ namespace Task_Management_API.Infrastructure.Services
                 // Create Roles if they don't exist
                 await CreateRoleIfNotExistsAsync(Roles.Admin);
                 await CreateRoleIfNotExistsAsync(Roles.User);
-                await CreateRoleIfNotExistsAsync(Roles.Manager);
 
                 // Create Admin Users
                 await CreateAdminUsersAsync();
@@ -69,27 +68,29 @@ namespace Task_Management_API.Infrastructure.Services
 
         private async Task CreateAdminUsersAsync()
         {
-            var adminEmails = _adminSettings.Value.AdminEmails;
+            var admins = _adminSettings.Value.Admins;
             var defaultPassword = _adminSettings.Value.DefaultAdminPassword;
 
-            foreach (var email in adminEmails)
+            foreach (var adminInfo in admins)
             {
-                await CreateAdminUserAsync(email, defaultPassword);
+                await CreateAdminUserAsync(adminInfo, defaultPassword);
             }
         }
 
-        private async Task CreateAdminUserAsync(string email, string password)
+        private async Task CreateAdminUserAsync(AdminUserSetting adminInfo, string password)
         {
-            var existingUser = await _userManager.FindByEmailAsync(email);
+            var existingUser = await _userManager.FindByEmailAsync(adminInfo.Email);
 
             if (existingUser == null)
             {
                 var adminUser = new ApplicationUser
                 {
-                    UserName = email,
-                    Email = email,
-                    EmailConfirmed = true,
-                    Country = "System" // or any default value
+                    UserName = adminInfo.UserName,
+                    Email = adminInfo.Email,
+                    PhoneNumber = adminInfo.PhoneNumber,
+                    Country = adminInfo.Country,
+                    ImagePath = adminInfo.ImagePath,
+                    EmailConfirmed = true
                 };
 
                 var result = await _userManager.CreateAsync(adminUser, password);
@@ -97,23 +98,23 @@ namespace Task_Management_API.Infrastructure.Services
                 if (result.Succeeded)
                 {
                     await _userManager.AddToRoleAsync(adminUser, Roles.Admin);
-                    _logger.LogInformation("Admin user {Email} created successfully", email);
+                    _logger.LogInformation("Admin user {Email} created successfully", adminInfo.Email);
                 }
                 else
                 {
                     _logger.LogError("Failed to create admin user {Email}: {Errors}",
-                        email, string.Join(", ", result.Errors.Select(e => e.Description)));
+                        adminInfo.Email, string.Join(", ", result.Errors.Select(e => e.Description)));
                 }
             }
             else
             {
-                // Make sure existing user has admin role
                 if (!await _userManager.IsInRoleAsync(existingUser, Roles.Admin))
                 {
                     await _userManager.AddToRoleAsync(existingUser, Roles.Admin);
-                    _logger.LogInformation("Added admin role to existing user {Email}", email);
+                    _logger.LogInformation("Added admin role to existing user {Email}", adminInfo.Email);
                 }
             }
         }
+
     }
 }

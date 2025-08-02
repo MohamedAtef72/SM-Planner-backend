@@ -10,6 +10,5 @@ namespace Task_Management_API.Domain.Constants
     {
         public const string Admin = "Admin";
         public const string User = "User";
-        public const string Manager = "Manager";
     }
 }

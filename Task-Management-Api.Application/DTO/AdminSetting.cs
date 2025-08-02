@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Task_Management_API.Domain.Models;
 
 namespace Task_Management_Api.Application.DTO
 {
     public class AdminSetting
     {
-        public List<string> AdminEmails { get; set; } = new();
-        public string DefaultAdminPassword { get; set; } = "Admin@123456";
+            public string DefaultAdminPassword { get; set; }
+            public List<AdminUserSetting> Admins { get; set; }
     }
 }
