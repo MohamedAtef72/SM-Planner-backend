@@ -1,13 +1,14 @@
 ## Task Management API
 
-A fully-featured Task Management API System built with ASP.NET Core, providing comprehensive task management capabilities with user authentication, authorization, and ***Redis caching*** for optimal performance.
+A fully-featured Task Management API System built with ASP.NET Core, providing comprehensive task management capabilities with user authentication, authorization
+
+- API Link: [API](https://sm-planner.runasp.net/)
 
 ## 🚀 Features
 
 - ***User Authentication & Authorization***: Secure user registration, login, logout, and JWT-based authentication
 - ***Task Management***: Complete CRUD operations for tasks with Redis caching
 - ***User Management***: User profile management and role-based access control
-- ***Redis Caching***: High-performance caching for all Task and User controller endpoints
 - ***Admin Management***: Automated admin user creation with configurable settings
 - ***Status Tracking***: Track task progress with different status levels
 - ***Due Date Management***: Set deadlines and manage task scheduling
@@ -23,7 +24,6 @@ A fully-featured Task Management API System built with ASP.NET Core, providing c
 - Entity Framework Core
 - ASP.NET Core Identity
 - JWT Authentication
-- Redis Caching
 - SQL Server / SQLite
 - Swagger/OpenAPI
 - AutoMapper
@@ -35,7 +35,6 @@ Before running this application, make sure you have the following installed:
 
 - .NET 8.0 SDK
 - SQL Server (or SQL Server Express)
-- Docker (for Redis caching)
 - Visual Studio 2022 or Visual Studio Code
 
 ## ⚡ Quick Start
@@ -45,41 +44,6 @@ Before running this application, make sure you have the following installed:
 ```bash
 git clone https://github.com/MohamedAtef72/TaskManagementAPI.git
 cd TaskManagementAPI
-```
-
-### 2. Install and Run Redis Server using Docker
-
-***Using Docker (Recommended):***
-```bash
-# Pull and run Redis container
-docker run -d --name redis-cache -p 6379:6379 redis
-
-# Verify Redis is running
-docker ps
-
-# Test Redis connection (optional)
-docker exec -it redis-cache redis-cli ping
-```
-
-***Alternative Installation Methods:***
-
-***Windows (using Chocolatey):***
-```bash
-choco install redis-64
-redis-server
-```
-
-***Ubuntu/Debian:***
-```bash
-sudo apt update
-sudo apt install redis-server
-sudo systemctl start redis-server
-```
-
-***macOS (using Homebrew):***
-```bash
-brew install redis
-brew services start redis
 ```
 
 ### 3. Configure Application Settings
@@ -96,36 +60,33 @@ Create or update your `appsettings.json` file with the following configuration:
   },
   "AllowedHosts": "*",
   "ConnectionStrings": {
-    "DefaultConnection": "Data Source=ServerName;Initial Catalog=DBName;Integrated Security=true;TrustServerCertificate=true",
-    "RedisConnection": "localhost:6379"
-  },
-  "Redis": {
-    "InstanceName": "InstanceName",
-    "DefaultCacheExpiration": "00:15:00"
+    "DefaultConnection": ""
   },
   "AdminSettings": {
-    "AdminEmails": [
-      "admin@taskmanagement.com",
-      "manager@taskmanagement.com"
-    ],
-    "DefaultAdminPassword": "Admin@123456"
+    "DefaultAdminPassword": "Admin@123456",
+    "Admins": [
+      {
+        "UserName": "admin1",
+        "Email": "",
+        "PhoneNumber": "",
+        "Country": "",
+        "ImagePath": ""
+      }
+    ]
   },
   "JWT": {
-    "SecretKey": "Your SecretKey",
-    "AudienceIP": "TaskManagementAPI"
+    "SecritKey": "Your SecritKey",
+    "AudienceIP": "Task",
+    "IssuerIP": "https://sm-planner.runasp.net/"
   }
 }
+
 ```
 
 ***Configuration Sections Explained:***
 
 ***ConnectionStrings:***
 - `DefaultConnection`: Your SQL Server database connection string
-- `RedisConnection`: Redis server connection string (default: localhost:6379 for Docker)
-
-***Redis Settings:***
-- `InstanceName`: Redis instance identifier for your application
-- `DefaultCacheExpiration`: Default cache expiration time (format: HH:MM:SS)
 
 ***AdminSettings:***
 - `AdminEmails`: List of email addresses that will be automatically created as admin users
@@ -154,44 +115,32 @@ dotnet run
 ### Authentication
 
 ```http
-POST /api/auth/register # User registration
-POST /api/auth/login    # User login
-POST /api/auth/logout   # User logout
+POST /api/Account/Register # User registration
+POST /api/Account/Login    # User login
+POST /api/Account/Refresh    # User login
 ```
 
 ### Tasks (with Redis Caching)
 
 ```http (Some Of EndPoint)
-GET /api/task                        # Get all tasks for authenticated user (cached)
-GET /api/task/{id}                   # Get specific task by ID (cached)
-POST /api/task                       # Create new task (invalidates cache)
-PUT /api/task/{id}                   # Update existing task (invalidates cache)
-DELETE /api/task/{id}                # Delete task (invalidates cache)
+GET /api/Task/GetAllTasks            # Get all tasks for authenticated user 
+GET /api/Task/MyTasks                # Get specific tasks related to user
+GET /api/Task/SpecificTask/{id}      # Get specific task by ID
+POST /api/Task/Add                   # Create new task 
+PUT /api/Task/{id}                   # Update existing task 
+DELETE /api/Task/{id}                # Delete task 
 ```
 
 ### Users (with Redis Caching)
 
 ```http (Some Of EndPoint)
-GET /api/user/profile    # Get user profile (cached)
-PUT /api/user/Update    # Update user profile (invalidates cache)
-DELETE /api/user/Delete # Delete user account (invalidates cache)
+GET /api/User/Userprofile                  # Get User Profile
+GET /api/User/GetAllUsers                  # Get All Users
+PUT /api/User/Update                       # Update user profile 
+DELETE /api/User/Delete                    # Delete user account
+DELETE /api/User/AdminDelete/{userId}      # Delete user from Admin Profile 
+
 ```
-
-## 🚀 Redis Caching Implementation
-
-This API implements ***Redis caching*** for all endpoints in the Task and User controllers to improve performance and reduce database load.
-
-***Caching Strategy:***
-- ***GET requests***: Results are cached for the configured expiration time
-- ***POST/PUT/DELETE requests***: Automatically invalidate related cache entries
-- ***Cache Keys***: Structured with user ID and endpoint-specific identifiers
-- ***Expiration***: Configurable via `Redis:DefaultCacheExpiration` setting
-
-***Cache Benefits:***
-- ***Reduced Database Load***: Frequently accessed data served from cache
-- ***Improved Response Times***: Faster API responses for cached data
-- ***Scalability***: Better performance under high load
-- ***Automatic Invalidation***: Cache automatically updated when data changes
 
 ## 📄 Pagination
 
@@ -238,12 +187,8 @@ GET /api/tasks?pageNumber=1&pageSize=20
   "title": "Complete API Documentation",
   "description": "Write comprehensive API documentation",
   "status": "InProgress",
-  "priority": "High",
   "dueDate": "2024-12-31T23:59:59",
-  "categoryId": 1,
-  "userId": "user-guid",
-  "createdAt": "2024-01-01T00:00:00",
-  "updatedAt": "2024-01-01T00:00:00"
+  "userId": "user-guid"
 }
 ```
 
@@ -252,11 +197,11 @@ GET /api/tasks?pageNumber=1&pageSize=20
 ```json
 {
   "id": "user-guid",
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "john.doe@example.com",
-  "userName": "johndoe",
-  "createdAt": "2024-01-01T00:00:00"
+  "UserName": "John",
+  "Email": "john.doe@example.com",
+  "Country": "Egypt",
+  "PhoneNumber": "",
+  "ImagePath": "",
 }
 ```
 
@@ -273,10 +218,7 @@ Authorization: Bearer <your-jwt-token>
 
 ### Logout Functionality
 
-The API now includes a logout endpoint that:
-- Invalidates the current JWT token
-- Clears any cached user data
-- Provides secure session termination
+In Front Remove Token From Session
 
 ## 👑 Admin Features
 
@@ -379,6 +321,5 @@ Interactive API documentation is available via ***Swagger UI*** at `/swagger` wh
 
 - ASP.NET Core team for the excellent framework
 - Entity Framework Core for robust data access
-- Redis team for high-performance caching
 - Swagger for API documentation
 - JWT for secure authentication
