@@ -63,10 +63,17 @@ Create or update your `appsettings.json` file with the following configuration:
     "DefaultConnection": ""
   },
   "AdminSettings": {
-    "DefaultAdminPassword": "Admin@123456",
+    "DefaultAdminPassword": "",
     "Admins": [
       {
-        "UserName": "admin1",
+        "UserName": "",
+        "Email": "",
+        "PhoneNumber": "",
+        "Country": "",
+        "ImagePath": ""
+      },
+      {
+        "UserName": "",
         "Email": "",
         "PhoneNumber": "",
         "Country": "",
@@ -75,9 +82,9 @@ Create or update your `appsettings.json` file with the following configuration:
     ]
   },
   "JWT": {
-    "SecritKey": "Your SecritKey",
-    "AudienceIP": "Task",
-    "IssuerIP": "https://sm-planner.runasp.net/"
+    "SecretKey": "",
+    "AudienceIP": "",
+    "IssuerIP": ""
   }
 }
 
