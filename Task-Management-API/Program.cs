@@ -10,6 +10,8 @@ using Task_Management_Api.Application.Interfaces;
 using Task_Management_API.Infrastructure.Repositories;
 using Task_Management_API.Infrastructure.Services;
 using AspNetCoreRateLimit;
+using DotNetEnv;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,7 +25,14 @@ builder.Services.Configure<AdminSetting>(
     builder.Configuration.GetSection("AdminSettings"));
 
 // Add Identity with Roles
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options => { })
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options => {
+    // --- Password settings ---
+    options.Password.RequireDigit = true;           // Requires at least one number (0-9)
+    options.Password.RequiredLength = 8;            // Minimum password length
+    options.Password.RequireNonAlphanumeric = true; // Requires at least one special character (e.g., !, @, #)
+    options.Password.RequireUppercase = true;       // Requires at least one uppercase letter (A-Z)
+    options.Password.RequireLowercase = true;
+})
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
 
@@ -48,7 +57,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    var key = Encoding.ASCII.GetBytes(builder.Configuration["JWT:SecritKey"]!);
+    var key = Encoding.ASCII.GetBytes(builder.Configuration["JWT:SecretKey"]!);
 
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -66,7 +75,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowReactApp",
         policy =>
         {
-            policy.WithOrigins("http://localhost:3000") // your React app
+            policy.WithOrigins("https://sm-planner-five.vercel.app/") // your React app
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -91,6 +100,12 @@ builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>()
 // Admin Setting
 builder.Services.Configure<AdminSetting>(
     builder.Configuration.GetSection("AdminSettings"));
+
+// env 
+Env.Load();
+
+builder.Configuration
+    .AddEnvironmentVariables();
 
 
 var app = builder.Build();

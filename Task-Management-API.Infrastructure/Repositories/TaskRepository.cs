@@ -20,20 +20,37 @@ namespace Task_Management_API.Infrastructure.Repositories
             _httpContextAccessor = httpContextAccessor;
         }
         // Get user-specific tasks
-        public async Task<PaginationListHelper<TaskInformation>> GetUserTasksPaginationAsync(string userId, int pageNumber, int pageSize)
+        public async Task<PaginationListHelper<TaskInformation>> GetUserTasksPaginationAsync(string userId, int pageNumber, int pageSize , string status)
         {
-            var tasksFromDatabase = _context.Tasks
-                .Where(x => x.UserId == userId);
-
-            var tasks = tasksFromDatabase.Select(task => new TaskInformation
+            if (status == "All")
             {
-                Id = task.Id,
-                Title = task.Title,
-                Description = task.Description,
-                Status = task.Status,
-                DueDate = task.DueDate
-            });
-            return await PaginationListHelper<TaskInformation>.CreateAsync(tasks, pageNumber, pageSize);
+                var tasksFromDatabase = _context.Tasks
+                    .Where(x => x.UserId == userId);
+
+                var tasks = tasksFromDatabase.Select(task => new TaskInformation
+                {
+                    Id = task.Id,
+                    Title = task.Title,
+                    Description = task.Description,
+                    Status = task.Status,
+                    DueDate = task.DueDate
+                });
+                return await PaginationListHelper<TaskInformation>.CreateAsync(tasks, pageNumber, pageSize);
+            }
+            else {
+                var tasksFromDatabase = _context.Tasks
+                   .Where(x => x.UserId == userId && x.Status == status);
+
+                var tasks = tasksFromDatabase.Select(task => new TaskInformation
+                {
+                    Id = task.Id,
+                    Title = task.Title,
+                    Description = task.Description,
+                    Status = task.Status,
+                    DueDate = task.DueDate
+                });
+                return await PaginationListHelper<TaskInformation>.CreateAsync(tasks, pageNumber, pageSize);
+            }
         }
 
         // Get user tasks as entities

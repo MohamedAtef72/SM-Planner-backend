@@ -147,7 +147,7 @@ namespace Task_Management_API.Controllers
             }
 
 
-            var signInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecritKey"]));
+            var signInKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["JWT:SecretKey"]));
             var credentials = new SigningCredentials(signInKey, SecurityAlgorithms.HmacSha256);
 
             var accessTokenExpiration = DateTime.UtcNow.AddMinutes(30);
