@@ -85,7 +85,7 @@ namespace Task_Management_API.Controllers
 
         [HttpGet("MyTasks")]
         [Authorize(Roles = Roles.Admin + "," + Roles.User)]
-        public async Task<IActionResult> GetUserTasks([FromQuery] PaginationParams paginationParams)
+        public async Task<IActionResult> GetUserTasks([FromQuery] PaginationParams paginationParams , string status)
         {
             try
             {
@@ -101,7 +101,7 @@ namespace Task_Management_API.Controllers
                     _logger.LogWarning($"GetUserTasks: User with ID {userId} not found.");
                     return NotFound(new ErrorResponse { Message = "User not found." });
                 }
-                var paginatedTasks = await _taskRepo.GetUserTasksPaginationAsync(userId, paginationParams.PageNumber, paginationParams.PageSize);
+                var paginatedTasks = await _taskRepo.GetUserTasksPaginationAsync(userId, paginationParams.PageNumber, paginationParams.PageSize , status);
 
                 var response = new
                 {

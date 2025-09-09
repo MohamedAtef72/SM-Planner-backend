@@ -12,7 +12,7 @@ namespace Task_Management_Api.Application.Interfaces
     public interface ITaskRepository : IMainRepository<AppTask>
     {
         // Specific Get Operations
-        Task<PaginationListHelper<TaskInformation>> GetUserTasksPaginationAsync(string userId, int pageNumber, int pageSize);
+        Task<PaginationListHelper<TaskInformation>> GetUserTasksPaginationAsync(string userId, int pageNumber, int pageSize , string status);
         Task<AppTask?> GetTaskByIdAsync(int taskId, string userId); // Added userId for security
         Task<List<AppTask>> GetUserTasksEntitiesAsync(string userId); // Returns Tasks entities instead of DTO
 
